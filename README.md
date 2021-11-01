@@ -73,5 +73,5 @@ func main() {
 Clone this repository, `cd` to cloned directory, `git checkout` to a release tag and build:
 
 ``` bash
-go build -ldflags="-X 'main.VERSION=$(git rev-parse --abbrev-ref HEAD)'"
+go build -ldflags="-X 'main.VERSION=$(git describe --tags)'"
 ```
