@@ -8,14 +8,16 @@ import (
 	"github.com/vlad-pbr/imcode/src/codec"
 )
 
+var F_VERSION bool
 var F_DECODE bool
 var F_FROM string
 var F_CYPHER string
 var F_TO string
 
-func Handle() error {
+func Handle(version string) error {
 
 	// define flags
+	flag.BoolVar(&F_VERSION, "version", false, "display tool version")
 	flag.BoolVar(&F_DECODE, "decode", false, "should the input file be decoded (encoding is default)")
 	flag.StringVar(&F_FROM, "from", "", "path to input file ('-' for stdin) [required]")
 	flag.StringVar(&F_CYPHER, "cypher", "", "path to cypher image ('-' for stdin) [required]")
@@ -23,6 +25,12 @@ func Handle() error {
 
 	// parse args
 	flag.Parse()
+
+	// display version then quit
+	if F_VERSION {
+		fmt.Printf("imcode version: %s\n", version)
+		os.Exit(0)
+	}
 
 	// check for undefined flags
 	if len(F_FROM) == 0 || len(F_CYPHER) == 0 && len(F_TO) == 0 {
