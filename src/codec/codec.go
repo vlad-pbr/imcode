@@ -26,24 +26,22 @@ func Encode(dataStream io.Reader, cypherStream io.Reader, outStream io.Writer) e
 
 	// amount of pixels needed to store metadata
 	metaPixels := getMeta(img)
-	maxBytes := ((img.Bounds().Max.X * img.Bounds().Max.Y) - metaPixels) * 4
+	maxBytes := ((img.Bounds().Max.X * img.Bounds().Max.Y) - metaPixels) * 3
 
 	// encode loop
-	buf := make([]byte, 4)
-	dataLength := 0
-	bytesRead := 0
-	eof := false
+	buf := make([]byte, 3)
+	dataLength, bytesRead := 0, 0
 	x, y := 0, 0
-	for ; y < img.Bounds().Max.Y && !eof; y++ {
+	for eof := false; y < img.Bounds().Max.Y && !eof; y++ {
 		for x = 0; x < img.Bounds().Max.X && !eof; x++ {
 
 			// store current values
-			r, g, b, a := img.At(x, y).RGBA()
-			values := []uint8{byte(r / 257), byte(g / 257), byte(b / 257), byte(a / 257)}
+			r, g, b, _ := img.At(x, y).RGBA()
+			values := [3]uint8{byte(r / 257), byte(g / 257), byte(b / 257)}
 
 			// read from data
 			bytesRead, err = dataStream.Read(buf)
-			if bytesRead < 4 {
+			if bytesRead < 3 {
 				eof = true
 			}
 
@@ -65,14 +63,14 @@ func Encode(dataStream io.Reader, cypherStream io.Reader, outStream io.Writer) e
 					R: values[0],
 					G: values[1],
 					B: values[2],
-					A: values[3],
+					A: 255,
 				})
 			}
 		}
 	}
 
-	// ensure there's enough pixels
-	if !eof || dataLength > maxBytes {
+	// ensure there's enough pixels to store data
+	if dataLength > maxBytes {
 		return fmt.Errorf("only %d bytes can be stored using provided cypher", maxBytes)
 	}
 
@@ -86,47 +84,37 @@ func Encode(dataStream io.Reader, cypherStream io.Reader, outStream io.Writer) e
 
 	// encode metadata
 	axes := []int{x, y}
-	for metaX, metaY := img.Bounds().Max.X-metaPixels, img.Bounds().Max.Y-1; metaX < img.Bounds().Max.X-1; metaX++ {
+	for metaY := img.Bounds().Max.Y - 1; metaY > 0 && metaPixels > 1; metaY-- {
+		for metaX := img.Bounds().Max.X - 2; metaX > 0 && metaPixels > 1; metaX, metaPixels = metaX-1, metaPixels-1 {
 
-		// calculate colors
-		values := [2][2]uint8{}
-		for j := 0; j < 2; j++ {
+			// calculate colors
+			values := [2]uint8{}
 			for i, value := 0, 255; i < 2; i, value = i+1, 255 {
-				if axes[j] < value {
-					value = axes[j]
+				if axes[i] < value {
+					value = axes[i]
 				}
-				axes[j] -= value
-				values[j][i] = uint8(value)
+				axes[i] -= value
+				values[i] = uint8(value)
 			}
+
+			// set meta pixel color
+			img.Set(metaX, metaY, color.RGBA{
+				R: values[0],
+				G: values[1],
+				B: 0,
+				A: 255,
+			})
+
 		}
-
-		fmt.Println(img.At(metaX, metaY).RGBA())
-		fmt.Println(values[0][0])
-		fmt.Println(metaX, metaY)
-		fmt.Println(img.Bounds())
-
-		// set meta pixel color
-		img.Set(metaX, metaY, color.RGBA{
-			R: 22,
-			G: 0,
-			B: 29,
-			A: 0,
-		})
-
-		fmt.Println(img.At(metaX, metaY).RGBA())
 	}
 
-	// fmt.Println(img.At(30, 30).RGBA())
-
 	// set amount of channels used in the final pixel
-	// fmt.Println(img.Bounds().Max.X-1, img.Bounds().Max.Y-1)
 	img.Set(img.Bounds().Max.X-1, img.Bounds().Max.Y-1, color.RGBA{
-		R: 0,
+		R: uint8(bytesRead),
 		G: 0,
 		B: 0,
-		A: uint8(bytesRead),
+		A: 255,
 	})
-	// fmt.Println(img.At(img.Bounds().Max.X-1, img.Bounds().Max.Y-1).RGBA())
 
 	// write to given out stream
 	if err = png.Encode(outStream, img); err != nil {
@@ -139,43 +127,77 @@ func Encode(dataStream io.Reader, cypherStream io.Reader, outStream io.Writer) e
 func Decode(codedStream io.Reader, cypherStream io.Reader, outStream io.Writer) error {
 
 	// read coded stream as image
-	codedImg, _, err := image.Decode(codedStream)
+	codedImage, _, err := image.Decode(codedStream)
 	if err != nil {
 		return fmt.Errorf("could not decode coded image: %s", err.Error())
 	}
 
 	// read cypher as image
-	cypherImg, _, err := image.Decode(cypherStream)
+	cypherImage, _, err := image.Decode(cypherStream)
 	if err != nil {
 		return fmt.Errorf("could not decode cypher image: %s", err.Error())
 	}
 
 	// ensure dimensions
-	if !codedImg.Bounds().Eq(cypherImg.Bounds()) {
+	if !codedImage.Bounds().Eq(cypherImage.Bounds()) {
 		return fmt.Errorf("provided cypher image and coded image are not equal in dimensions")
 	}
 
-	metaPixels := getMeta(codedImg)
+	// read metadata pixels
+	metaPixels := getMeta(codedImage)
 	dataCoordinates := []int{0, 0}
-	for metaX, metaY := codedImg.Bounds().Max.X-metaPixels, codedImg.Bounds().Max.Y-1; metaX < codedImg.Bounds().Max.X-1; metaX++ {
+	for metaY := codedImage.Bounds().Max.Y - 1; metaY > 0 && metaPixels > 1; metaY-- {
+		for metaX := codedImage.Bounds().Max.X - 2; metaX > 0 && metaPixels > 1; metaX, metaPixels = metaX-1, metaPixels-1 {
 
-		// decode pixel
-		r, g, b, a := codedImg.At(metaX, metaY).RGBA()
-		values := [][]uint8{{byte(r / 257), byte(g / 257)}, {byte(b / 257), byte(a / 257)}}
+			// decode pixel
+			r, g, _, _ := codedImage.At(metaX, metaY).RGBA()
+			values := []uint8{byte(r / 257), byte(g / 257)}
 
-		// calculate data pixel coordinates
-		for j := 0; j < 2; j++ {
+			// calculate data pixel coordinates
 			for i := 0; i < 2; i++ {
-				dataCoordinates[j] += int(values[j][i])
+				dataCoordinates[i] += int(values[i])
 			}
+
 		}
 	}
 
 	// parse channels used on final pixel
-	_, _, _, a := codedImg.At(codedImg.Bounds().Max.X-1, codedImg.Bounds().Max.Y-1).RGBA()
-	channelsUsed := a / 257
+	r, _, _, _ := codedImage.At(codedImage.Bounds().Max.X-1, codedImage.Bounds().Max.Y-1).RGBA()
+	channelsUsed := r / 257
 	if channelsUsed > 3 {
 		return fmt.Errorf("invalid metadata: channels used %d is bigger than 3", channelsUsed)
+	}
+	fileSize := (((dataCoordinates[1] * codedImage.Bounds().Max.X) + dataCoordinates[0]) * 3) + int(channelsUsed)
+
+	// decode loop
+	buf := make([]byte, 3)
+	for y := 0; y < codedImage.Bounds().Max.Y && fileSize > 0; y++ {
+		for x := 0; x < codedImage.Bounds().Max.X && fileSize > 0; x, fileSize = x+1, fileSize-3 {
+
+			// store image values
+			values := [2][3]uint8{}
+			for i, img := range [2]image.Image{codedImage, cypherImage} {
+				r, g, b, _ := img.At(x, y).RGBA()
+				values[i] = [3]uint8{byte(r / 257), byte(g / 257), byte(b / 257)}
+			}
+
+			// adjust buffer size if needed
+			if fileSize < 3 {
+				buf = make([]byte, fileSize)
+			}
+
+			// decode byte
+			for i := 0; i < len(buf); i++ {
+				buf[i] = values[0][i] - values[1][i]
+			}
+
+			// write to output stream
+			_, err := outStream.Write(buf)
+			if err != nil {
+				return fmt.Errorf("error occurred while writing to output stream: %s", err.Error())
+			}
+
+		}
 	}
 
 	return nil
@@ -195,5 +217,5 @@ func getMeta(img image.Image) int {
 	}
 
 	// amount of pixels needed for metadata
-	return int(math.Ceil(float64(maxBound)/510)) + 1
+	return int(math.Ceil(float64(maxBound)/255)) + 1
 }
