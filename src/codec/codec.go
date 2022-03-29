@@ -10,7 +10,7 @@ import (
 	"math"
 )
 
-func Encode(dataStream io.Reader, cypherStream io.Reader, outStream io.Writer) error {
+func Encode(dataStream io.Reader, cypherStream io.Reader, outStream io.Writer, no_padding bool) error {
 
 	// read cypher as image
 	_img, _, err := image.Decode(cypherStream)
@@ -26,7 +26,8 @@ func Encode(dataStream io.Reader, cypherStream io.Reader, outStream io.Writer) e
 
 	// amount of pixels needed to store metadata
 	metaPixels := getMeta(img)
-	maxBytes := ((img.Bounds().Max.X * img.Bounds().Max.Y) - metaPixels) * 3
+	maxPixels := (img.Bounds().Max.X * img.Bounds().Max.Y) - metaPixels
+	maxBytes := maxPixels * 3
 
 	// encode loop
 	buf := make([]byte, 3)
@@ -73,6 +74,21 @@ func Encode(dataStream io.Reader, cypherStream io.Reader, outStream io.Writer) e
 	if dataLength > maxBytes {
 		return fmt.Errorf("only %d bytes can be stored using provided cypher", maxBytes)
 	}
+
+	// pad remaining pixels if padding is enabled and there are pixels left
+	// remainingPixels := maxPixels - (dataLength / 3)
+	// if !no_padding && remainingPixels > 0 {
+
+	// 	for ; y < img.Bounds().Max.Y && remainingPixels != 0; y++ {
+	// 		for ; x < img.Bounds().Max.X && remainingPixels != 0; x, remainingPixels = x+1, remainingPixels-1 {
+	// 			//fmt.Println(x, y)
+	// 			//rx, ry := rand.Intn(x), rand.Intn(y)
+	// 			//fmt.Println(rx, ry)
+	// 			//img.Set(x, y, img.At(rx, ry))
+	// 		}
+	// 	}
+
+	// }
 
 	// adjust x,y coordinates
 	y -= 1

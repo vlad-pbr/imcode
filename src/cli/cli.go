@@ -10,6 +10,7 @@ import (
 
 var F_VERSION bool
 var F_DECODE bool
+var F_NO_PADDING bool
 var F_FROM string
 var F_CYPHER string
 var F_TO string
@@ -19,6 +20,7 @@ func Handle(version string) error {
 	// define flags
 	flag.BoolVar(&F_VERSION, "version", false, "display tool version")
 	flag.BoolVar(&F_DECODE, "decode", false, "should the input file be decoded (encoding is default)")
+	flag.BoolVar(&F_NO_PADDING, "no-padding", false, "disable leftover pixel padding when encoding")
 	flag.StringVar(&F_FROM, "from", "", "path to input file ('-' for stdin) [required]")
 	flag.StringVar(&F_CYPHER, "cypher", "", "path to cypher image ('-' for stdin) [required]")
 	flag.StringVar(&F_TO, "to", "-", "path to output file ('-' for stdout) [required]")
@@ -80,7 +82,7 @@ func Handle(version string) error {
 	if F_DECODE {
 		err = codec.Decode(in, cypher, out)
 	} else {
-		err = codec.Encode(in, cypher, out)
+		err = codec.Encode(in, cypher, out, F_NO_PADDING)
 	}
 	if err != nil {
 		return fmt.Errorf("codec error: %s", err.Error())
